@@ -1,7 +1,7 @@
 // Service worker: cache del "app shell" para uso offline a pie de campo.
-const CACHE = 'coach-space-v1';
+const CACHE = 'coach-space-v2';
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/index.html', '/manifest.webmanifest', '/icon.svg'])));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './manifest.webmanifest', './icon.svg'])));
   self.skipWaiting();
 });
 self.addEventListener('activate', (e) => {
@@ -18,6 +18,6 @@ self.addEventListener('fetch', (e) => {
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then((r) => r || caches.match('/index.html')))
+      .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
   );
 });

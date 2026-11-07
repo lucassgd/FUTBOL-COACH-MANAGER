@@ -15,6 +15,12 @@ npm run preview    # sirve dist/ (activa el service worker / modo offline)
 
 Para la vista móvil en escritorio: DevTools → modo dispositivo (iPhone / Pixel).
 
+## Publicación en GitHub Pages
+
+El workflow `.github/workflows/deploy.yml` compila (`npm run build`) y publica `dist/` en cada push.
+Requisito (una sola vez): **Settings → Pages → Build and deployment → Source: «GitHub Actions»**.
+URL: `https://lucassgd.github.io/FUTBOL-COACH-MANAGER/`
+
 ## Módulos (barra de navegación inferior)
 
 | Pestaña | Qué hace |
