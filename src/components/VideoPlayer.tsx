@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FastForward, Pause, Play, Rewind } from 'lucide-react';
 import { clamp, cx, fmtTime } from '../lib/utils';
+import { loadYouTubeApi, youtubeId, youtubeStart } from '../lib/youtube';
 
 export interface PlayerHandle {
   seek: (t: number) => void;
@@ -25,8 +26,8 @@ interface Props {
 }
 
 /**
- * Reproductor unificado: vídeo real (MP4 / archivo local) o "partido simulado" (animación táctica
- * generada en SVG, sirve de vídeo de prueba sin conexión).
+ * Reproductor unificado: YouTube, vídeo real (MP4 / archivo local) o "partido simulado" (animación
+ * táctica generada en SVG, sirve de vídeo de prueba sin conexión).
  */
 const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, duration, markers = [], onTime, onDuration, label, seed = 1 }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -37,12 +38,18 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
   const raf = useRef<number>();
   const last = useRef<number>(0);
   const tRef = useRef(0);
+  const ytId = youtubeId(src);
+  const ytHost = useRef<HTMLDivElement>(null);
+  const yt = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [ytError, setYtError] = useState(false);
+  const speeds = ytId ? [0.5, 1, 1.5, 2] : [1, 2, 4, 8];
 
   useEffect(() => setDur(duration), [duration]);
   useEffect(() => {
     setT(0);
     tRef.current = 0;
     setPlaying(false);
+    setSpeed(1);
   }, [src]);
 
   const update = useCallback(
@@ -53,6 +60,69 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
     },
     [onTime],
   );
+
+  // YouTube: crea el reproductor embebido y sincroniza el tiempo
+  useEffect(() => {
+    if (!ytId || !ytHost.current) return;
+    let dead = false;
+    let poll: number | undefined;
+    setYtError(false);
+    const host = document.createElement('div');
+    host.className = 'h-full w-full';
+    ytHost.current.appendChild(host);
+    loadYouTubeApi()
+      .then((YT) => {
+        if (dead) return;
+        yt.current = new YT.Player(host, {
+          videoId: ytId,
+          width: '100%',
+          height: '100%',
+          playerVars: { playsinline: 1, rel: 0, modestbranding: 1, start: youtubeStart(src) || undefined },
+          events: {
+            onReady: (e: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+              const d = e.target.getDuration?.();
+              if (d) {
+                setDur(d);
+                onDuration?.(d);
+              }
+              poll = window.setInterval(() => {
+                const p = yt.current;
+                if (!p?.getCurrentTime) return;
+                const nt = p.getCurrentTime();
+                if (Math.abs(nt - tRef.current) > 0.05) update(nt);
+                const dd = p.getDuration?.();
+                if (dd && Math.abs(dd - durRef.current) > 1) {
+                  setDur(dd);
+                  onDuration?.(dd);
+                }
+              }, 250);
+            },
+            onStateChange: (e: any) => setPlaying(e.data === 1 || e.data === 3), // eslint-disable-line @typescript-eslint/no-explicit-any
+            onError: () => setYtError(true),
+          },
+        });
+      })
+      .catch(() => !dead && setYtError(true));
+    return () => {
+      dead = true;
+      window.clearInterval(poll);
+      try {
+        yt.current?.destroy?.();
+      } catch {
+        /* ya destruido */
+      }
+      yt.current = null;
+      host.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytId, src]);
+
+  const durRef = useRef(dur);
+  durRef.current = dur;
+
+  useEffect(() => {
+    if (ytId) yt.current?.setPlaybackRate?.(speed);
+  }, [speed, ytId]);
 
   // reloj simulado
   useEffect(() => {
@@ -77,14 +147,20 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
   const seek = useCallback(
     (nt: number) => {
       const v = clamp(nt, 0, dur);
-      if (src && videoRef.current) videoRef.current.currentTime = v;
+      if (ytId) yt.current?.seekTo?.(v, true);
+      else if (src && videoRef.current) videoRef.current.currentTime = v;
       update(v);
     },
-    [src, dur, update],
+    [src, ytId, dur, update],
   );
 
   const toggle = () => {
-    if (src && videoRef.current) {
+    if (ytId) {
+      const p = yt.current;
+      if (!p?.getPlayerState) return;
+      if (p.getPlayerState() === 1) p.pauseVideo();
+      else p.playVideo();
+    } else if (src && videoRef.current) {
       if (videoRef.current.paused) videoRef.current.play().catch(() => undefined);
       else videoRef.current.pause();
     } else {
@@ -98,14 +174,24 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
     time: () => tRef.current,
     pause: () => {
       videoRef.current?.pause();
+      yt.current?.pauseVideo?.();
       setPlaying(false);
     },
   }));
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-800 bg-black">
-      <div className="relative aspect-video w-full" onClick={toggle}>
-        {src ? (
+      <div className="relative aspect-video w-full" onClick={ytId ? undefined : toggle}>
+        {ytId ? (
+          <>
+            <div ref={ytHost} className="h-full w-full [&_iframe]:h-full [&_iframe]:w-full" />
+            {ytError && (
+              <div className="absolute inset-0 grid place-items-center bg-black/90 p-4 text-center text-xs text-slate-300">
+                No se pudo cargar el vídeo de YouTube. Comprueba la conexión y que el vídeo sea público o «no listado» y permita insertarse.
+              </div>
+            )}
+          </>
+        ) : src ? (
           <video
             ref={videoRef}
             src={src}
@@ -122,12 +208,12 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
         ) : (
           <SimulatedMatch t={t} seed={seed} />
         )}
-        <div className="pointer-events-none absolute left-2 top-2 flex gap-1.5">
+        <div className={cx('pointer-events-none absolute left-2 top-2 flex gap-1.5', ytId && 'hidden')}>
           <span className="rounded bg-black/70 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-300">{fmtTime(t)}</span>
           {label && <span className="max-w-[220px] truncate rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-slate-200">{label}</span>}
           {!src && <span className="rounded bg-amber-500/80 px-1.5 py-0.5 text-[10px] font-bold text-black">SIMULADO</span>}
         </div>
-        {!playing && (
+        {!playing && !ytId && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <span className="grid h-14 w-14 place-items-center rounded-full bg-black/60 text-white">
               <Play size={26} />
@@ -173,7 +259,7 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
           {fmtTime(t)} / {fmtTime(dur)}
         </span>
         <div className="ml-auto flex gap-1">
-          {[1, 2, 4, 8].map((s) => (
+          {speeds.map((s) => (
             <button key={s} onClick={() => setSpeed(s)} className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', speed === s ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400')}>
               {s}x
             </button>

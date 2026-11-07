@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, Clock, Film, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Clock, Film, Link2, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../../store/store';
 import { Btn, Card, Empty, Field, Input, Segmented, Select, Sheet, TextArea } from '../../components/ui';
 import VideoPlayer, { type PlayerHandle } from '../../components/VideoPlayer';
@@ -200,7 +200,7 @@ function Videos({ match, set }: { match: Match; set: (p: Partial<Match>) => void
       {adding && (
         <Card className="space-y-2">
           <Input placeholder="Título (ej. Salida de balón rival)" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <Input placeholder="URL MP4 (opcional; vacío = vídeo de análisis simulado)" value={url} onChange={(e) => setUrl(e.target.value)} />
+          <Input placeholder="Enlace YouTube o MP4 (opcional; vacío = vídeo simulado)" value={url} onChange={(e) => setUrl(e.target.value)} />
           <Select value={kind} onChange={(v) => setKind(v as MatchVideo['kind'])} options={[{ value: 'salida', label: 'Salida de balón' }, { value: 'abp', label: 'Balón parado' }, { value: 'tactico', label: 'Táctico' }, { value: 'otro', label: 'Otro' }]} />
           <div className="flex gap-2">
             <Btn tone="ghost" className="flex-1" onClick={() => setAdding(false)}>
@@ -228,6 +228,19 @@ function Videos({ match, set }: { match: Match; set: (p: Partial<Match>) => void
 
       {video && (
         <>
+          <div className="flex items-center gap-2">
+            <Link2 size={14} className="shrink-0 text-slate-500" />
+            <Input
+              key={video.id}
+              defaultValue={video.url ?? ''}
+              placeholder="Pega aquí un enlace de YouTube o MP4"
+              onBlur={(e) => {
+                const u = e.target.value.trim() || undefined;
+                if (u !== video.url) updateVideo({ ...video, url: u });
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            />
+          </div>
           <VideoPlayer
             ref={player}
             src={video.url}

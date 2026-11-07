@@ -6,6 +6,7 @@ import { Btn, Card, Chip, ChipRow, Empty, Field, Input, Segmented, Sheet } from 
 import VideoPlayer, { type PlayerHandle } from '../../components/VideoPlayer';
 import { cx, fmtShort, fmtTime, todayISO, uid } from '../../lib/utils';
 import type { Analysis, TagType } from '../../types';
+import { isPlayableUrl, youtubeId } from '../../lib/youtube';
 
 export const TAGS: { type: TagType; label: string; short: string; color: string; icon: typeof Zap; sign: 1 | -1 }[] = [
   { type: 'ocasion_gen', label: 'Ocasión Ganada / Generada', short: 'Oc. generada', color: '#10b981', icon: Sparkles, sign: 1 },
@@ -28,7 +29,7 @@ export default function AnalysisModule() {
         <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
           <Film size={18} /> Tagging estadístico en 1 clic
         </div>
-        <p className="mt-1 text-xs text-slate-400">Carga el vídeo bruto del partido (MP4 local o URL) o usa el partido de prueba, y etiqueta acciones vinculadas a jugadores o al bloque.</p>
+        <p className="mt-1 text-xs text-slate-400">Carga el vídeo bruto del partido (YouTube, MP4 local o URL) o usa el partido de prueba, y etiqueta acciones vinculadas a jugadores o al bloque.</p>
         <Btn className="mt-3 w-full" onClick={() => setCreating(true)}>
           <Plus size={16} /> Nuevo análisis
         </Btn>
@@ -46,7 +47,7 @@ export default function AnalysisModule() {
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold">{x.title}</div>
                 <div className="text-[11px] text-slate-500">
-                  {fmtShort(x.createdAt)} · {x.tags.length} etiquetas · {x.source === 'demo' ? 'Partido de prueba' : x.source === 'local' ? x.fileName : 'URL'}
+                  {fmtShort(x.createdAt)} · {x.tags.length} etiquetas · {x.source === 'demo' ? 'Partido de prueba' : x.source === 'local' ? x.fileName : youtubeId(x.url) ? 'YouTube' : 'URL'}
                 </div>
               </div>
               <div className="flex gap-1">
@@ -72,7 +73,7 @@ function NewAnalysis({ open, onClose, onCreated }: { open: boolean; onClose: () 
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const ok = title.trim() && (src === 'demo' || (src === 'url' && /^https?:\/\//.test(url)) || (src === 'local' && file));
+  const ok = title.trim() && (src === 'demo' || (src === 'url' && isPlayableUrl(url)) || (src === 'local' && file));
 
   const create = async () => {
     setBusy(true);
@@ -120,7 +121,7 @@ function NewAnalysis({ open, onClose, onCreated }: { open: boolean; onClose: () 
           options={[
             { value: 'demo', label: 'Partido de prueba' },
             { value: 'local', label: 'Vídeo local' },
-            { value: 'url', label: 'URL MP4' },
+            { value: 'url', label: 'YouTube / URL' },
           ]}
         />
         {src === 'demo' && <p className="text-xs text-slate-400">Reproductor simulado de 45 minutos con animación táctica (funciona sin conexión).</p>}
@@ -132,7 +133,14 @@ function NewAnalysis({ open, onClose, onCreated }: { open: boolean; onClose: () 
             <input type="file" accept="video/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
         )}
-        {src === 'url' && <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…/partido.mp4" />}
+        {src === 'url' && (
+          <div className="space-y-1">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtu.be/… o https://…/partido.mp4" />
+            <p className="text-[11px] text-slate-500">
+              {youtubeId(url) ? '✓ Vídeo de YouTube detectado' : 'Pega el enlace de YouTube (público o «no listado») o de un MP4.'}
+            </p>
+          </div>
+        )}
       </div>
     </Sheet>
   );
