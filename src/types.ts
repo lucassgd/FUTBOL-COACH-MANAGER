@@ -217,6 +217,15 @@ export interface VideoTag {
   playerId: string | null; // null => bloque/equipo
   note: string;
 }
+/** Recorte de una acción: [a - pre, b + post] segundos. */
+export interface VideoClip {
+  id: string;
+  title: string;
+  a: number; // inicio de la acción
+  b: number; // final de la acción
+  pre: number; // margen antes (s)
+  post: number; // margen después (s)
+}
 export interface Analysis {
   id: string;
   title: string;
@@ -226,5 +235,6 @@ export interface Analysis {
   fileName?: string;
   duration: number;
   tags: VideoTag[];
+  clips?: VideoClip[];
   createdAt: string;
 }

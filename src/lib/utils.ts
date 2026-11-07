@@ -56,3 +56,22 @@ export const fmtTime = (sec: number) => {
 };
 
 export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+/**
+ * Interpreta un tiempo escrito por el entrenador: "12:34" (min:seg), "1:02:03" (h:min:seg),
+ * "12" o "12,5" (minutos), "12m30s". Devuelve segundos o null si no se entiende.
+ */
+export const parseTime = (raw: string): number | null => {
+  const s = raw.trim().toLowerCase().replace(',', '.').replace(/[’'′]/g, ':').replace(/["″]/g, '');
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s) * 60);
+  const parts = s.split(':');
+  if (parts.length >= 2 && parts.length <= 3 && parts.every((p) => /^\d+$/.test(p))) {
+    const n = parts.map(Number);
+    if (n.slice(1).some((x) => x >= 60)) return null;
+    return n.length === 2 ? n[0] * 60 + n[1] : n[0] * 3600 + n[1] * 60 + n[2];
+  }
+  const m = s.match(/^(?:(\d+)h)?\s*(?:(\d+)m(?:in)?)?\s*(?:(\d+)s)?$/);
+  if (m && (m[1] || m[2] || m[3])) return +(m[1] ?? 0) * 3600 + +(m[2] ?? 0) * 60 + +(m[3] ?? 0);
+  return null;
+};

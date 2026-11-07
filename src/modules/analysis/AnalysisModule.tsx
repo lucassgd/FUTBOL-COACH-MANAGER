@@ -7,6 +7,7 @@ import VideoPlayer, { type PlayerHandle } from '../../components/VideoPlayer';
 import { cx, fmtShort, fmtTime, todayISO, uid } from '../../lib/utils';
 import type { Analysis, TagType } from '../../types';
 import { isPlayableUrl, youtubeId } from '../../lib/youtube';
+import Clips, { clipRange } from './Clips';
 
 export const TAGS: { type: TagType; label: string; short: string; color: string; icon: typeof Zap; sign: 1 | -1 }[] = [
   { type: 'ocasion_gen', label: 'Ocasión Ganada / Generada', short: 'Oc. generada', color: '#10b981', icon: Sparkles, sign: 1 },
@@ -157,7 +158,7 @@ function Tagger({ analysis, onBack }: { analysis: Analysis; onBack: () => void }
   const added = useRef<string[]>([]);
   const [who, setWho] = useState<string | null>(null);
   const [sticky, setSticky] = useState(false);
-  const [view, setView] = useState<'timeline' | 'tabla'>('timeline');
+  const [view, setView] = useState<'timeline' | 'tabla' | 'clips'>('timeline');
   const [filter, setFilter] = useState<TagType | 'all'>('all');
   const [src, setSrc] = useState<string | undefined>(analysis.source === 'url' ? analysis.url : undefined);
   const [flash, setFlash] = useState<TagType | null>(null);
@@ -249,7 +250,11 @@ function Tagger({ analysis, onBack }: { analysis: Analysis; onBack: () => void }
           duration={analysis.duration}
           seed={3}
           label={analysis.source === 'demo' ? 'Partido de prueba' : analysis.fileName}
-          markers={analysis.tags.map((t) => ({ id: t.id, t: t.t, color: TAG[t.type].color }))}
+          markers={
+            view === 'clips'
+              ? (analysis.clips ?? []).map((c) => ({ id: c.id, t: clipRange(c, analysis.duration).start, color: '#38bdf8' }))
+              : analysis.tags.map((t) => ({ id: t.id, t: t.t, color: TAG[t.type].color }))
+          }
           onDuration={(d) => Math.abs(d - analysis.duration) > 1 && upsertAnalysis({ ...analysis, duration: Math.round(d) })}
         />
       </div>
@@ -310,8 +315,9 @@ function Tagger({ analysis, onBack }: { analysis: Analysis; onBack: () => void }
             value={view}
             onChange={setView}
             options={[
-              { value: 'timeline', label: `Línea de tiempo (${analysis.tags.length})` },
-              { value: 'tabla', label: 'Balance por jugador' },
+              { value: 'timeline', label: `Etiquetas (${analysis.tags.length})` },
+              { value: 'tabla', label: 'Balance' },
+              { value: 'clips', label: `Clips (${analysis.clips?.length ?? 0})` },
             ]}
           />
         </div>
@@ -367,6 +373,8 @@ function Tagger({ analysis, onBack }: { analysis: Analysis; onBack: () => void }
             </div>
           </div>
         )}
+
+        {view === 'clips' && <Clips analysis={analysis} player={ref} ytId={youtubeId(analysis.url)} />}
 
         {view === 'tabla' && (
           <div className="mt-3 overflow-hidden rounded-2xl border border-slate-800">

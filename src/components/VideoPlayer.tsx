@@ -7,6 +7,11 @@ export interface PlayerHandle {
   seek: (t: number) => void;
   time: () => number;
   pause: () => void;
+  play: () => void;
+  /** Reproduce de `start` a `end` y se detiene (llama a `onEnd` al terminar). */
+  playRange: (start: number, end: number, onEnd?: () => void) => void;
+  /** Cancela el tramo en curso sin parar el vídeo. */
+  clearRange: () => void;
 }
 
 export interface Marker {
@@ -43,6 +48,8 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
   const yt = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [ytError, setYtError] = useState(false);
   const speeds = ytId ? [0.5, 1, 1.5, 2] : [1, 2, 4, 8];
+  const range = useRef<{ start: number; end: number; at: number; onEnd?: () => void } | null>(null);
+  const [activeRange, setActiveRange] = useState<{ start: number; end: number } | null>(null);
 
   useEffect(() => setDur(duration), [duration]);
   useEffect(() => {
@@ -52,11 +59,20 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
     setSpeed(1);
   }, [src]);
 
+  const stopRef = useRef<() => void>(() => undefined);
   const update = useCallback(
     (nt: number) => {
       tRef.current = nt;
       setT(nt);
       onTime?.(nt);
+      const rg = range.current;
+      // se ignoran ~0,7 s tras saltar: YouTube puede devolver aún el tiempo anterior
+      if (rg && nt >= rg.end - 0.05 && performance.now() - rg.at > 700) {
+        range.current = null;
+        setActiveRange(null);
+        stopRef.current();
+        rg.onEnd?.();
+      }
     },
     [onTime],
   );
@@ -144,7 +160,7 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
     if (videoRef.current) videoRef.current.playbackRate = speed;
   }, [speed]);
 
-  const seek = useCallback(
+  const rawSeek = useCallback(
     (nt: number) => {
       const v = clamp(nt, 0, dur);
       if (ytId) yt.current?.seekTo?.(v, true);
@@ -153,6 +169,28 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
     },
     [src, ytId, dur, update],
   );
+  const clearRange = () => {
+    range.current = null;
+    setActiveRange(null);
+  };
+  const seek = (nt: number) => {
+    clearRange();
+    rawSeek(nt);
+  };
+  const pause = () => {
+    videoRef.current?.pause();
+    yt.current?.pauseVideo?.();
+    setPlaying(false);
+  };
+  stopRef.current = pause;
+  const play = () => {
+    if (ytId) yt.current?.playVideo?.();
+    else if (src && videoRef.current) videoRef.current.play().catch(() => undefined);
+    else {
+      if (tRef.current >= dur) rawSeek(0);
+      setPlaying(true);
+    }
+  };
 
   const toggle = () => {
     if (ytId) {
@@ -164,7 +202,7 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
       if (videoRef.current.paused) videoRef.current.play().catch(() => undefined);
       else videoRef.current.pause();
     } else {
-      if (tRef.current >= dur) seek(0);
+      if (tRef.current >= dur) rawSeek(0);
       setPlaying((p) => !p);
     }
   };
@@ -172,10 +210,16 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
   useImperativeHandle(ref, () => ({
     seek,
     time: () => tRef.current,
-    pause: () => {
-      videoRef.current?.pause();
-      yt.current?.pauseVideo?.();
-      setPlaying(false);
+    pause,
+    play,
+    clearRange,
+    playRange: (start, end, onEnd) => {
+      const a = clamp(start, 0, dur);
+      const b = clamp(end, a + 0.5, dur || end);
+      rawSeek(a);
+      range.current = { start: a, end: b, at: performance.now(), onEnd };
+      setActiveRange({ start: a, end: b });
+      play();
     },
   }));
 
@@ -238,6 +282,12 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
           }}
         >
           <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-slate-800" />
+          {activeRange && (
+            <div
+              className="absolute top-1/2 h-3 -translate-y-1/2 rounded bg-sky-400/40 ring-1 ring-sky-400"
+              style={{ left: `${(activeRange.start / (dur || 1)) * 100}%`, width: `${Math.max(0.5, ((activeRange.end - activeRange.start) / (dur || 1)) * 100)}%` }}
+            />
+          )}
           <div className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-emerald-500" style={{ width: `${(t / (dur || 1)) * 100}%` }} />
           {markers.map((m) => (
             <span key={m.id} className="absolute top-0 h-6 w-1 -translate-x-1/2 rounded-full" style={{ left: `${(m.t / (dur || 1)) * 100}%`, background: m.color }} />
@@ -255,7 +305,7 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, 
         <button className="text-slate-300" onClick={() => seek(t + 5)} aria-label="+5s">
           <FastForward size={18} />
         </button>
-        <span className="font-mono text-xs text-slate-400">
+        <span className="whitespace-nowrap font-mono text-xs text-slate-400">
           {fmtTime(t)} / {fmtTime(dur)}
         </span>
         <div className="ml-auto flex gap-1">
